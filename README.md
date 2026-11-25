@@ -7,9 +7,9 @@ file for file.
 ## What is copied
 
 Every public model and dataset of the `empiriolabsai` organization on Hugging Face that needs no access agreement and
-states a license on its card is copied to a repository of the same name under `empiriolabs` on ModelScope. Each file on ModelScope has the same SHA-256
-as on Hugging Face, and a file removed from Hugging Face is removed from ModelScope. Gated repositories and Spaces are
-not copied. The copies are checked every six hours.
+states a license on its card is copied to a repository of the same name under `empiriolabs` on ModelScope. Each file
+on ModelScope has the same SHA-256 as on Hugging Face, and a file removed from Hugging Face is removed from
+ModelScope. Gated repositories and Spaces are not copied. The copies are checked every six hours.
 
 Hugging Face is the source: model cards, issues and discussions live there.
 
