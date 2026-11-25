@@ -265,7 +265,9 @@ def hf_files(kind: str, name: str, sha: str, *, contents: dict | None = None, ga
     files: dict[str, dict] = {}
     url: str | None = f"{HF}/api/{kind}/{HF_ORG}/{name}/tree/{sha}?recursive=true&expand=false"
     while url:
-        status, data, headers = http("GET", url)
+        # A gated repository's listing shows its storage digests only to a token that can read it (anonymously
+        # each LFS oid is a row of asterisks, seen 2026-11-25), so it is read with HF_TOKEN.
+        status, data, headers = http("GET", url, headers=hf_headers(gated))
         if status != 200:
             raise MirrorError(f"Hugging Face did not list the files of {kind}/{name}@{sha[:12]} (HTTP {status})")
         for entry in json.loads(data):
@@ -276,6 +278,9 @@ def hf_files(kind: str, name: str, sha: str, *, contents: dict | None = None, ga
             lfs = entry.get("lfs")
             if lfs:
                 oid = str(lfs.get("oid") or "")
+                if oid and set(oid) == {"*"}:
+                    raise MirrorError(f"{kind}/{name}: the Hub hides the digest of {path}: HF_TOKEN cannot read "
+                                      "this gated repository")
                 if not OID.match(oid) or int(lfs.get("size") or -1) != size:
                     raise MirrorError(f"{kind}/{name}: {path} has no valid storage digest on Hugging Face")
                 files[path] = {"size": size, "sha256": oid, "lfs": True}
