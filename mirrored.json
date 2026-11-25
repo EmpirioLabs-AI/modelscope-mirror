@@ -22,67 +22,67 @@
     "state": "skipped"
   },
   "models/aplomb-2": {
-    "hf_sha": "7eabed5d84756673d1addda82c6495afe2db0780",
+    "hf_sha": "7fd771706f6501b8356d95088eb25041ab6d57f9",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-2",
     "state": "in-sync"
   },
   "models/aplomb-2-large": {
-    "hf_sha": "c365a915e53372c694a77b9707f8e01aab474289",
+    "hf_sha": "d02a19e786eae8fa3292b0771158e5af98c9bc5a",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-2-large",
     "state": "in-sync"
   },
   "models/canora-dutch": {
-    "hf_sha": "e58a80e9095333d62a0fc7762eea65d07989e894",
+    "hf_sha": "4a4920ea737fc14af4d33eaba01271757ba967e3",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-dutch",
     "state": "in-sync"
   },
   "models/canora-french": {
-    "hf_sha": "8a3d526884752d62ad4451555625d80d84449ff4",
+    "hf_sha": "ad819cc011783a5badb6591e137abd243afaa3ea",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-french",
     "state": "in-sync"
   },
   "models/canora-german": {
-    "hf_sha": "9acb9f3c2963f36137a1f48e0069f3e2e3fdc84b",
+    "hf_sha": "eae7fd96ecb3501b53d65c8cb5f2e458f88df88d",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-german",
     "state": "in-sync"
   },
   "models/canora-italian": {
-    "hf_sha": "8be52c2580b42144ecd6457a8b825927b4655d64",
+    "hf_sha": "0f2f34378ff39cb3355453a90954b577b95f3f4b",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-italian",
     "state": "in-sync"
   },
   "models/canora-korean": {
-    "hf_sha": "65d22c3f95fd92e036ff62b0cf6b96e3aa977a68",
+    "hf_sha": "ad11531a683672b83385582ac4321a30ebb4d182",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-korean",
     "state": "in-sync"
   },
   "models/canora-norwegian": {
-    "hf_sha": "71892371b8dbf739b5ace55e59541c01943cb986",
+    "hf_sha": "1beb26bfd5ed3669614e02c874ac1d5209225490",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-norwegian",
     "state": "in-sync"
   },
   "models/canora-polish": {
-    "hf_sha": "07a14e6fcb2533831ec1db82d86126f2f5fd38ab",
+    "hf_sha": "63cffee2f1f05962712df5223c782d1d8a461fbc",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-polish",
     "state": "in-sync"
   },
   "models/canora-portuguese": {
-    "hf_sha": "8baa7e3ea127e921b13b02c5ce67fe4a0823a9b5",
+    "hf_sha": "31b9c7c904c196c84c530df7d3211e64dc8cd4b4",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-portuguese",
     "state": "in-sync"
   },
   "models/canora-russian": {
-    "hf_sha": "fb6513c20b66e05fc9b86503bd11f9b3f0ff63d0",
+    "hf_sha": "a94b594fce2b86373556baa21c1de0eeca8eb192",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-russian",
     "state": "in-sync"
   },
   "models/canora-spanish": {
-    "hf_sha": "f5715deb8ce23a1b3224c4258253bcc1192127c0",
+    "hf_sha": "37d88fb270e7501cf2796ee78306d06afbf67877",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-spanish",
     "state": "in-sync"
   },
   "models/canora-turkish": {
-    "hf_sha": "3fc98b63761800f76fea635855b3abea87545ce3",
+    "hf_sha": "26d21703451b577bd6f63a2e5f6895122dd59263",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-turkish",
     "state": "in-sync"
   },
