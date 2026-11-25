@@ -118,5 +118,17 @@
     "hf_sha": "ba8aead476ae327c9edd2b3f7e880dfed85fef99",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/speaker-gender",
     "state": "in-sync"
+  },
+  "spaces/canora-text-to-speech": {
+    "access": "public",
+    "hf_sha": "aa1287db8d678b9cc89ddfa12e838ba54a91f376",
+    "modelscope": "https://www.modelscope.cn/studios/empiriolabs/canora-text-to-speech",
+    "state": "in-sync"
+  },
+  "spaces/speech-and-text-classifiers": {
+    "access": "public",
+    "hf_sha": "88ae709398db9c1481ad643341b4399a7894d20e",
+    "modelscope": "https://www.modelscope.cn/studios/empiriolabs/speech-and-text-classifiers",
+    "state": "in-sync"
   }
 }

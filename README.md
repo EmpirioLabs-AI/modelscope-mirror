@@ -38,6 +38,8 @@ Hugging Face is the source: model cards, issues and discussions live there.
 | [empiriolabsai/finance-sentiment](https://huggingface.co/empiriolabsai/finance-sentiment) | [empiriolabs/finance-sentiment](https://www.modelscope.cn/models/empiriolabs/finance-sentiment) | `3a8b18872151` |
 | [empiriolabsai/speaker-age](https://huggingface.co/empiriolabsai/speaker-age) | [empiriolabs/speaker-age](https://www.modelscope.cn/models/empiriolabs/speaker-age) | `ce82c3d204c6` |
 | [empiriolabsai/speaker-gender](https://huggingface.co/empiriolabsai/speaker-gender) | [empiriolabs/speaker-gender](https://www.modelscope.cn/models/empiriolabs/speaker-gender) | `ba8aead476ae` |
+| [empiriolabsai/canora-text-to-speech](https://huggingface.co/spaces/empiriolabsai/canora-text-to-speech) | [empiriolabs/canora-text-to-speech](https://www.modelscope.cn/studios/empiriolabs/canora-text-to-speech) | `aa1287db8d67` |
+| [empiriolabsai/speech-and-text-classifiers](https://huggingface.co/spaces/empiriolabsai/speech-and-text-classifiers) | [empiriolabs/speech-and-text-classifiers](https://www.modelscope.cn/studios/empiriolabs/speech-and-text-classifiers) | `88ae709398db` |
 <!-- mirror:end -->
 
 ## License
