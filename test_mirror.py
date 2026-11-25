@@ -89,6 +89,22 @@ class PureFunctions(unittest.TestCase):
         same = handler.redirect_request(req, None, 302, "Found", {}, "https://huggingface.co/api/resolve-cache/x")
         self.assertEqual(same.get_header("Authorization"), "Bearer t")
 
+    def test_modelscope_s_own_lfs_lines_in_gitattributes_are_the_same_file(self):
+        hub = "*.safetensors filter=lfs diff=lfs merge=lfs -text\n*.bin filter=lfs diff=lfs merge=lfs -text\n"
+        added = hub + '"/tokenizer.json" filter=lfs diff=lfs merge=lfs -text\n"/vocab.json" filter=lfs diff=lfs merge=lfs -text\n'
+        self.assertTrue(mirror.same_gitattributes(hub, added, {"tokenizer.json", "vocab.json"}))
+        self.assertTrue(mirror.same_gitattributes(hub, hub.replace("\n", "\r\n"), set()))
+        self.assertFalse(mirror.same_gitattributes(hub, added, {"tokenizer.json"}))  # vocab.json is not stored as LFS
+        self.assertFalse(mirror.same_gitattributes(hub, hub + "*.json -text\n", {"a.json"}))  # not an LFS line
+        self.assertFalse(mirror.same_gitattributes(hub, "*.bin filter=lfs diff=lfs merge=lfs -text\n", set()))
+
+    def test_a_gated_copy_is_not_planned_without_a_read_token(self):
+        info = {"sha": SHA, "private": False, "gated": "auto", "disabled": False, "cardData": {"license": "other"}}
+        with mock.patch.dict(mirror.os.environ, {"HF_TOKEN": "t", "MODELSCOPE_READ_TOKEN": "", "MODELSCOPE_TOKEN": ""}), \
+                mock.patch.object(mirror, "hf_info", lambda kind, name: info):
+            with self.assertRaises(mirror.MirrorError):
+                mirror.plan_one("models", "aplomb-1")
+
     def test_access_follows_the_hub(self):
         self.assertEqual(mirror.access({"gated": False}), {"visibility": "public"})
         self.assertEqual(mirror.access({"gated": "auto"}), {"visibility": "gated", "gated_mode": "auto"})

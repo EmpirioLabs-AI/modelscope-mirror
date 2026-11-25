@@ -521,6 +521,54 @@ def commit(kind: str, name: str, actions: list[dict], message: str, token: str) 
 # Planning
 # --------------------------------------------------------------------------------------------------------------
 
+def ms_read_token(gated: bool) -> str | None:
+    """The token ModelScope reads are made with: none for a public copy (anyone can read it), and for a gated copy,
+    which ModelScope lists only to its owner (404 otherwise, seen 2026-11-25), the read-only MODELSCOPE_READ_TOKEN
+    (plan, record) or the job's own MODELSCOPE_TOKEN (sync)."""
+    if not gated:
+        return None
+    return (os.environ.get("MODELSCOPE_READ_TOKEN") or os.environ.get("MODELSCOPE_TOKEN") or "").strip() or None
+
+
+def ms_text(kind: str, name: str, path: str, token: str | None) -> str:
+    """One small file of the copy, as text."""
+    url = (f"{MS}/api/v1/{kind}/{MS_OWNER}/{name}/repo?Revision=master&FilePath="
+           f"{urllib.parse.quote(path, safe='')}")
+    status, data, _ = http("GET", url, headers=ms_headers(token))
+    if status != 200:
+        raise MirrorError(f"ModelScope did not return {path} of {kind}/{name} (HTTP {status})")
+    return data.decode("utf-8", "replace")
+
+
+# ModelScope appends one such line to .gitattributes for each file it stores as LFS that no pattern covers (Hugging
+# Face keeps a file in LFS without a pattern when it came through its API, as aplomb-1's tokenizer.json): a git
+# clone of the copy needs it, so a .gitattributes that is the Hub's text plus only these lines is the same file.
+LFS_LINE = re.compile(r'^"/(?P<path>[^"]+)" filter=lfs diff=lfs merge=lfs -text$')
+
+
+def same_gitattributes(hub: str, copy: str, stored: set[str]) -> bool:
+    hub_lines = [ln for ln in hub.replace("\r\n", "\n").split("\n") if ln.strip()]
+    copy_lines = [ln for ln in copy.replace("\r\n", "\n").split("\n") if ln.strip()]
+    if copy_lines[:len(hub_lines)] != hub_lines:
+        return False
+    for line in copy_lines[len(hub_lines):]:
+        m = LFS_LINE.match(line.strip())
+        if not m or m.group("path") not in stored:
+            return False
+    return True
+
+
+def settle_gitattributes(kind: str, name: str, source: dict, copy: dict, write: list[str], token: str | None,
+                         hub_text: bytes | None) -> list[str]:
+    """`write` without .gitattributes when the copy's differs only by ModelScope's own LFS lines."""
+    if ".gitattributes" not in write or ".gitattributes" not in copy or hub_text is None:
+        return write
+    stored = {p for p, meta in copy.items() if meta.get("lfs")}
+    if same_gitattributes(hub_text.decode("utf-8", "replace"), ms_text(kind, name, ".gitattributes", token), stored):
+        return [p for p in write if p != ".gitattributes"]
+    return write
+
+
 def diff(source: dict[str, dict], copy: dict[str, dict]) -> tuple[list[str], list[str]]:
     """(paths to write, paths to delete) that make copy equal source."""
     write = sorted(p for p, meta in source.items()
@@ -544,14 +592,20 @@ def plan_one(kind: str, name: str) -> dict:
         return {**entry, "state": "skipped", "reason": reason}
     want = access(info)
     entry["access"] = want["visibility"]
+    gated = bool(info.get("gated"))
+    token = ms_read_token(gated)
+    if gated and not token:
+        raise MirrorError(f"{kind}/{name}: a gated copy can only be read with MODELSCOPE_READ_TOKEN")
     contents: dict[str, bytes] = {}
-    source = hf_files(kind, name, info["sha"], contents=contents, gated=bool(info.get("gated")))
+    source = hf_files(kind, name, info["sha"], contents=contents, gated=gated)
     problem = card_problem(contents.get("README.md"))
     if problem:
         entry["card"] = problem
-    if not ms_exists(kind, name):
+    if not ms_exists(kind, name, token):
         return {**entry, "state": "sync", "reason": "not on ModelScope yet", "write": len(source), "delete": 0}
-    write, delete = diff(source, ms_files(kind, name))
+    copy = ms_files(kind, name, token)
+    write, delete = diff(source, copy)
+    write = settle_gitattributes(kind, name, source, copy, write, token, contents.get(".gitattributes"))
     if write or delete:
         return {**entry, "state": "sync", "reason": f"{len(write)} to write, {len(delete)} to delete",
                 "write": len(write), "delete": len(delete)}
@@ -637,6 +691,7 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
         ms_create(kind, name, card_license(info), token, want)
         copy = ms_files(kind, name, token, new=True)
     write, delete = diff(source, copy)
+    write = settle_gitattributes(kind, name, source, copy, write, token, contents.get(".gitattributes"))
     log(f"{repo}@{sha[:12]}: {len(source)} files on Hugging Face, {len(copy)} on ModelScope; "
         f"{len(write)} to write, {len(delete)} to delete")
     result = {"repo": repo, "hf_sha": sha, "modelscope": ms_repo_url(kind, name)}
@@ -724,6 +779,7 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
 
     after = ms_files(kind, name, token)
     left_write, left_delete = diff(source, after)
+    left_write = settle_gitattributes(kind, name, source, after, left_write, token, contents.get(".gitattributes"))
     if left_write or left_delete:
         return {**result, "state": "failed", "uploaded_bytes": uploaded,
                 "reason": f"after the commit {len(left_write)} files still differ and {len(left_delete)} are extra: "

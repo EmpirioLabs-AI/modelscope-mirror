@@ -27,7 +27,9 @@ concurrency:
 
 jobs:
   # HF_TOKEN, a read-only Hugging Face token in the modelscope environment, reads our gated repositories; without
-  # it a gated repository is not copied. The plan and record jobs reference only it, never the ModelScope token.
+  # it a gated repository is not copied. MODELSCOPE_READ_TOKEN, a read-only ModelScope token, reads the gated
+  # copies, which ModelScope lists only to their owner. The plan and record jobs reference only these two read
+  # tokens, never the ModelScope write token.
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -45,6 +47,7 @@ jobs:
         env:
           MIRROR_ONLY: ${{ inputs.only }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODELSCOPE_READ_TOKEN: ${{ secrets.MODELSCOPE_READ_TOKEN }}
         run: python3 mirror.py plan
 
   sync:
@@ -107,6 +110,7 @@ jobs:
         id: record
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODELSCOPE_READ_TOKEN: ${{ secrets.MODELSCOPE_READ_TOKEN }}
         run: python3 mirror.py record results || echo "failed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit the record
