@@ -149,12 +149,47 @@ def hf_info(kind: str, name: str) -> dict:
     return info
 
 
+def hf_token() -> str:
+    """A Hugging Face read token (HF_TOKEN), used only to read our own gated repositories; empty when not set."""
+    return os.environ.get("HF_TOKEN", "").strip()
+
+
+def hf_headers(gated: bool) -> dict:
+    token = hf_token() if gated else ""
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+class _DropAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect without carrying the Hugging Face token to another host (the Hub sends large files from
+    its own storage hosts, which need no token)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
+            new.remove_header("Authorization")
+        return new
+
+
+HF_OPENER = urllib.request.build_opener(_DropAuthOnRedirect)
+
+
+def access(info: dict) -> dict:
+    """ModelScope's access settings that match Hugging Face's: public, or gated with the same approval mode
+    (ModelScope's gated_mode is auto or manual, as the Hub's gate)."""
+    gate = info.get("gated")
+    if not gate:
+        return {"visibility": "public"}
+    return {"visibility": "gated", "gated_mode": "manual" if gate == "manual" else "auto"}
+
+
 def skip_reason(info: dict) -> str | None:
     """Why a repository is not copied, or None when it is."""
     if info.get("private") is not False:
         return "private on Hugging Face"
-    if info.get("gated"):
-        return "gated on Hugging Face: downloads need an accepted agreement"
+    if info.get("gated") and not hf_token():
+        # Its files download only with a Hugging Face token; without one it cannot be copied (it is copied gated,
+        # with the same approval mode, once HF_TOKEN is set).
+        return "gated on Hugging Face"
     if info.get("disabled"):
         return "disabled on Hugging Face"
     # ModelScope gives a repository created without a license its own default (Apache 2.0, seen 2026-11-24), so a
@@ -176,6 +211,40 @@ def card_license(info: dict) -> dict:
     return fields
 
 
+def hf_read(url: str, attempts: int = 3) -> tuple[int, bytes]:
+    """GET a file of a gated repository with HF_TOKEN (the token never follows a redirect to another host)."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **hf_headers(True)})
+        try:
+            with HF_OPENER.open(req, timeout=120) as resp:
+                return resp.status, resp.read()
+        except urllib.error.HTTPError as err:
+            if err.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
+                return err.code, b""
+            last = err
+        except (urllib.error.URLError, TimeoutError, ConnectionError, httpclient.HTTPException) as err:
+            last = err
+        time.sleep(2 ** (attempt + 1))
+    raise MirrorError(f"GET {redact(url)} failed: {last}")
+
+
+# A picture or a sample the card embeds through huggingface.co, or audio on our media CDN in a type it serves
+# untyped: none of them plays where Hugging Face is out of reach, which is where many ModelScope readers are.
+CARD_EMBED = re.compile(r"""(?:\bsrc\s*=\s*["']|!\[[^\]]*\]\()"""
+                        r"""(https://huggingface\.co/[^"'\s)]+/resolve/[^"'\s)]+"""
+                        r"""|https://media\.empiriolabs\.ai/[^"'\s)]+\.(?:wav|flac))""", re.I)
+
+
+def card_problem(readme: bytes | None) -> str | None:
+    """Why the card will not show its pictures or play its samples everywhere, or None."""
+    found = sorted(set(CARD_EMBED.findall((readme or b"").decode("utf-8", "replace"))))
+    if not found:
+        return None
+    return (f"the card embeds {len(found)} file(s) that do not play where Hugging Face is out of reach "
+            f"(first {found[0]}); serve them from media.empiriolabs.ai")
+
+
 def hf_file_url(kind: str, name: str, sha: str, path: str) -> str:
     prefix = "" if kind == "models" else f"{kind}/"
     return f"{HF}/{prefix}{HF_ORG}/{name}/resolve/{sha}/{urllib.parse.quote(path, safe='/')}"
@@ -190,9 +259,9 @@ def safe_path(path: str) -> str:
     return path
 
 
-def hf_files(kind: str, name: str, sha: str, *, contents: dict | None = None) -> dict[str, dict]:
+def hf_files(kind: str, name: str, sha: str, *, contents: dict | None = None, gated: bool = False) -> dict[str, dict]:
     """path -> {size, sha256, lfs} at revision sha. Files kept in git are downloaded to hash them (they are small);
-    their bytes go into `contents` when it is given."""
+    their bytes go into `contents` when it is given. A gated repository's files are read with HF_TOKEN."""
     files: dict[str, dict] = {}
     url: str | None = f"{HF}/api/{kind}/{HF_ORG}/{name}/tree/{sha}?recursive=true&expand=false"
     while url:
@@ -218,7 +287,10 @@ def hf_files(kind: str, name: str, sha: str, *, contents: dict | None = None) ->
     for path, meta in files.items():
         if meta["lfs"]:
             continue
-        status, data, _ = http("GET", hf_file_url(kind, name, sha, path), timeout=120)
+        if gated:
+            status, data = hf_read(hf_file_url(kind, name, sha, path))
+        else:
+            status, data, _ = http("GET", hf_file_url(kind, name, sha, path), timeout=120)
         if status != 200 or len(data) != meta["size"]:
             raise MirrorError(f"{kind}/{name}: could not read {path} from Hugging Face (HTTP {status})")
         meta["sha256"] = hashlib.sha256(data).hexdigest()
@@ -302,11 +374,33 @@ def ms_files(kind: str, name: str, token: str | None = None, *, new: bool = Fals
     return files
 
 
-def ms_create(kind: str, name: str, license_fields: dict, token: str) -> None:
-    """A public repository with the Hugging Face card's license (skip_reason refuses a card without one)."""
+def ms_access(kind: str, name: str, token: str | None = None) -> dict:
+    """The repository's access on ModelScope, in the fields access() writes."""
+    status, payload = get_json(f"{MS}/openapi/v1/{kind}/{MS_OWNER}/{name}", headers=ms_headers(token))
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if status != 200 or not isinstance(data, dict):
+        raise MirrorError(f"ModelScope did not describe {kind}/{name} (HTTP {status})")
+    if data.get("gated"):
+        mode = str(data.get("gated_mode") or "auto").lower()
+        return {"visibility": "gated", "gated_mode": "manual" if mode == "manual" else "auto"}
+    return {"visibility": "private" if data.get("private") else "public"}
+
+
+def ms_set_access(kind: str, name: str, fields: dict, token: str) -> None:
+    status, data, _ = http("PATCH", f"{MS}/openapi/v1/{kind}/{MS_OWNER}/{name}/settings",
+                           headers=ms_headers(token, json_body=True), body=json.dumps(fields).encode(), attempts=2)
+    if not 200 <= status < 300:
+        raise MirrorError(f"ModelScope refused the access change for {kind}/{name} (HTTP {status}): "
+                          f"{data.decode('utf-8', 'replace')[:300]}")
+    log(f"{kind}/{name}: access set to {fields}")
+
+
+def ms_create(kind: str, name: str, license_fields: dict, token: str, access_fields: dict | None = None) -> None:
+    """A repository with the Hugging Face card's license (skip_reason refuses a card without one) and the Hub's
+    access: public, or gated with the same approval mode."""
     if not license_fields.get("license"):
         raise MirrorError(f"{kind}/{name}: no license to create it with")
-    payload = {"owner": MS_OWNER, "repo_name": name, "visibility": "public", **license_fields}
+    payload = {"owner": MS_OWNER, "repo_name": name, **(access_fields or {"visibility": "public"}), **license_fields}
     status, data, _ = http("POST", f"{MS}/openapi/v1/{kind}", headers=ms_headers(token, json_body=True),
                            body=json.dumps(payload).encode(), attempts=2)
     if 200 <= status < 300:
@@ -358,9 +452,10 @@ class HashingReader:
         return block
 
 
-def stream_blob(url: str, action: dict, size: int, oid: str, token: str) -> None:
+def stream_blob(url: str, action: dict, size: int, oid: str, token: str, gated: bool = False) -> None:
     """Download from Hugging Face and upload to ModelScope storage in one pass, checking the digest."""
-    source = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=300)
+    source = HF_OPENER.open(urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **hf_headers(gated)}),
+                            timeout=300)
     try:
         if source.status != 200:
             raise MirrorError(f"Hugging Face answered {source.status} for {redact(url)}")
@@ -442,13 +537,22 @@ def plan_one(kind: str, name: str) -> dict:
     reason = skip_reason(info)
     if reason:
         return {**entry, "state": "skipped", "reason": reason}
-    source = hf_files(kind, name, info["sha"])
+    want = access(info)
+    entry["access"] = want["visibility"]
+    contents: dict[str, bytes] = {}
+    source = hf_files(kind, name, info["sha"], contents=contents, gated=bool(info.get("gated")))
+    problem = card_problem(contents.get("README.md"))
+    if problem:
+        entry["card"] = problem
     if not ms_exists(kind, name):
         return {**entry, "state": "sync", "reason": "not on ModelScope yet", "write": len(source), "delete": 0}
     write, delete = diff(source, ms_files(kind, name))
     if write or delete:
         return {**entry, "state": "sync", "reason": f"{len(write)} to write, {len(delete)} to delete",
                 "write": len(write), "delete": len(delete)}
+    have = ms_access(kind, name)
+    if have != want:
+        return {**entry, "state": "sync", "reason": f"access is {have}, not {want}", "write": 0, "delete": 0}
     return {**entry, "state": "in-sync"}
 
 
@@ -515,19 +619,25 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
     if reason:
         raise MirrorError(f"{repo} is not copied: {reason}")
     sha = info["sha"]
+    gated = bool(info.get("gated"))
+    want = access(info)
     contents: dict[str, bytes] = {}
-    source = hf_files(kind, name, sha, contents=contents)
+    source = hf_files(kind, name, sha, contents=contents, gated=gated)
     started = time.monotonic()
     if ms_exists(kind, name, token):
         copy = ms_files(kind, name, token)
+        if ms_access(kind, name, token) != want:  # the Hub's gate changed: ModelScope follows it
+            ms_set_access(kind, name, want, token)
     else:
-        ms_create(kind, name, card_license(info), token)
+        ms_create(kind, name, card_license(info), token, want)
         copy = ms_files(kind, name, token, new=True)
     write, delete = diff(source, copy)
     log(f"{repo}@{sha[:12]}: {len(source)} files on Hugging Face, {len(copy)} on ModelScope; "
         f"{len(write)} to write, {len(delete)} to delete")
     result = {"repo": repo, "hf_sha": sha, "modelscope": ms_repo_url(kind, name)}
     if not write and not delete:
+        if ms_access(kind, name, token) != want:
+            return {**result, "state": "failed", "uploaded_bytes": 0, "reason": "ModelScope did not take the access"}
         return {**result, "state": "in-sync", "uploaded_bytes": 0}
 
     stored = [p for p in write if goes_to_storage(p, source[p])]
@@ -557,7 +667,7 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
         for attempt in range(3):
             began = time.monotonic()
             try:
-                stream_blob(url, action, size, oid, token)
+                stream_blob(url, action, size, oid, token, gated)
                 seconds = max(time.monotonic() - began, 0.001)
                 rate.add(size, seconds)
                 log(f"  uploaded {path} ({size / 1e6:.1f} MB, {size / 1e6 / seconds:.1f} MB/s)")
@@ -613,6 +723,8 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
         return {**result, "state": "failed", "uploaded_bytes": uploaded,
                 "reason": f"after the commit {len(left_write)} files still differ and {len(left_delete)} are extra: "
                           + ", ".join((left_write + left_delete)[:5])}
+    if ms_access(kind, name, token) != want:
+        return {**result, "state": "failed", "uploaded_bytes": uploaded, "reason": "ModelScope did not take the access"}
     return {**result, "state": "synced", "uploaded_bytes": uploaded}
 
 
@@ -650,7 +762,8 @@ def render_table(entries: list[dict]) -> str:
         hf = f"https://huggingface.co/{'' if kind == 'models' else kind + '/'}{HF_ORG}/{name}"
         if entry["state"] == "skipped":
             continue
-        lines.append(f"| [{HF_ORG}/{name}]({hf}) | [{MS_OWNER}/{name}]({entry['modelscope']}) | "
+        gated = " (gated)" if entry.get("access") == "gated" else ""
+        lines.append(f"| [{HF_ORG}/{name}]({hf}) | [{MS_OWNER}/{name}]({entry['modelscope']}){gated} | "
                      f"`{entry['hf_sha'][:12]}` |")
     skipped = [e for e in entries if e["state"] == "skipped"]
     if skipped:
@@ -670,6 +783,7 @@ def record(results_dir: str | None) -> int:
     entries = plan()
     eligible = {e["repo"] for e in entries if e["state"] != "skipped"}
     state = {e["repo"]: {"hf_sha": e["hf_sha"], "modelscope": e["modelscope"], "state": e["state"],
+                         **({"access": e["access"]} if e.get("access") else {}),
                          **({"reason": e["reason"]} if e.get("reason") else {})} for e in entries}
     STATE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     text = README.read_text(encoding="utf-8")
@@ -684,6 +798,7 @@ def record(results_dir: str | None) -> int:
     problems += [f"{e['repo']}: still differs ({e.get('reason')})" for e in entries
                  if e["state"] == "sync" and not any(r.get("repo") == e["repo"] and r.get("state") == "incomplete"
                                                       for r in results)]
+    problems += [f"{e['repo']}: {e['card']}" for e in entries if e.get("card")]
     try:
         orphans = ms_orphans(eligible)
     except MirrorError as err:

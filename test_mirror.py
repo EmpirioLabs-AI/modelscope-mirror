@@ -80,6 +80,20 @@ class PureFunctions(unittest.TestCase):
         rate.add(10, 100.0)  # a small file does not count
         self.assertAlmostEqual(rate.seconds_for(int(1e9)), 12.5)
 
+    def test_the_hub_token_never_follows_a_redirect_to_another_host(self):
+        handler = mirror._DropAuthOnRedirect()
+        req = mirror.urllib.request.Request("https://huggingface.co/empiriolabsai/x/resolve/a/model.safetensors",
+                                            headers={"Authorization": "Bearer t", "User-Agent": "u"})
+        away = handler.redirect_request(req, None, 302, "Found", {}, "https://cas-bridge.xethub.hf.co/x?sig=s")
+        self.assertIsNone(away.get_header("Authorization"))
+        same = handler.redirect_request(req, None, 302, "Found", {}, "https://huggingface.co/api/resolve-cache/x")
+        self.assertEqual(same.get_header("Authorization"), "Bearer t")
+
+    def test_access_follows_the_hub(self):
+        self.assertEqual(mirror.access({"gated": False}), {"visibility": "public"})
+        self.assertEqual(mirror.access({"gated": "auto"}), {"visibility": "gated", "gated_mode": "auto"})
+        self.assertEqual(mirror.access({"gated": "manual"}), {"visibility": "gated", "gated_mode": "manual"})
+
     def test_redact_drops_the_query(self):
         self.assertEqual(mirror.redact("https://h/p?X-Signature=s"), "https://h/p")
 
@@ -91,7 +105,10 @@ class PureFunctions(unittest.TestCase):
              "modelscope": "https://www.modelscope.cn/datasets/empiriolabs/results"},
             {"repo": "models/aplomb-1", "state": "skipped", "hf_sha": SHA, "modelscope": "",
              "reason": "gated on Hugging Face: downloads need an accepted agreement"},
+            {"repo": "models/aplomb-9", "state": "in-sync", "hf_sha": SHA, "access": "gated",
+             "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-9"},
         ])
+        self.assertIn("(https://www.modelscope.cn/models/empiriolabs/aplomb-9) (gated)", table)
         self.assertIn("[empiriolabsai/canora-dutch](https://huggingface.co/empiriolabsai/canora-dutch)", table)
         self.assertIn("(https://huggingface.co/datasets/empiriolabsai/results)", table)
         self.assertIn("Not copied: `models/aplomb-1`, gated", table)
@@ -110,9 +127,26 @@ class FakeHub:
         self.calls: list[tuple[str, str]] = []
         self.commits: list[dict] = []
         self.created: list[dict] = []
+        self.access = {"private": False, "gated": False}  # ModelScope's, once the repository exists
+        self.access_changes: list[dict] = []
+        self.gated_reads: list[str] = []
+
+    def hf_read(self, url, attempts=3):
+        self.gated_reads.append(url)
+        return 200, self.hf[url.split(f"/resolve/{SHA}/", 1)[1]]
 
     def http(self, method, url, *, headers=None, body=None, timeout=60, attempts=4):
         self.calls.append((method, url))
+        if url == f"{mirror.MS}/openapi/v1/models/{mirror.MS_OWNER}/canora-test" and method == "GET":
+            if self.ms is None:
+                return 404, b"{}", {}
+            return 200, json.dumps({"success": True, "data": {"id": "empiriolabs/canora-test", **self.access}}).encode(), {}
+        if url == f"{mirror.MS}/openapi/v1/models/{mirror.MS_OWNER}/canora-test/settings" and method == "PATCH":
+            fields = json.loads(body)
+            self.access_changes.append(fields)
+            self.access = {"private": False, "gated": fields["visibility"] == "gated",
+                           **({"gated_mode": fields["gated_mode"]} if "gated_mode" in fields else {})}
+            return 200, b'{"success": true}', {}
         if url.startswith(f"{mirror.HF}/api/models/{mirror.HF_ORG}/canora-test/tree/"):
             tree = []
             for path, data in self.hf.items():
@@ -135,8 +169,11 @@ class FakeHub:
             files = [{"Type": "blob", "Path": p, "Size": len(d), "Sha256": digest(d)} for p, d in self.ms.items()]
             return 200, json.dumps({"Code": 200, "Data": {"Files": files}}).encode(), {}
         if url == f"{mirror.MS}/openapi/v1/models" and method == "POST":
-            self.created.append(json.loads(body))
+            payload = json.loads(body)
+            self.created.append(payload)
             self.ms = {}
+            self.access = {"private": False, "gated": payload.get("visibility") == "gated",
+                           **({"gated_mode": payload["gated_mode"]} if "gated_mode" in payload else {})}
             return 200, b'{"success": true}', {}
         if url.endswith("/info/lfs/objects/batch"):
             objects = json.loads(body)["objects"]
@@ -157,7 +194,7 @@ class FakeHub:
             return 200, b'{"Success": true}', {}
         raise AssertionError(f"unexpected request {method} {url}")
 
-    def stream_blob(self, url, action, size, oid, token):
+    def stream_blob(self, url, action, size, oid, token, gated=False):
         assert action["href"].startswith("https://store.example/")
         self.stored.add(oid)
 
@@ -211,7 +248,7 @@ class SyncFlow(unittest.TestCase):
         hub = FakeHub(files, ms_files={})
         hub.stored.add(digest(b"weights"))
         uploads = []
-        hub.stream_blob = lambda *args: uploads.append(args)
+        hub.stream_blob = lambda *args, **kw: uploads.append(args)
         self.assertEqual(self.run_sync(hub)["state"], "synced")
         self.assertEqual(uploads, [])
 
@@ -222,11 +259,42 @@ class SyncFlow(unittest.TestCase):
         self.assertEqual(result["state"], "incomplete")
         self.assertEqual(hub.commits, [])
 
-    def test_a_gated_repository_is_refused(self):
+    def test_a_gated_repository_is_refused_without_a_hub_token(self):
         hub = FakeHub({"README.md": b"card"}, gated="auto")
-        with self.assertRaises(mirror.MirrorError):
-            self.run_sync(hub)
+        with mock.patch.dict(mirror.os.environ, {"HF_TOKEN": ""}):
+            with self.assertRaises(mirror.MirrorError):
+                self.run_sync(hub)
         self.assertFalse(any(method == "POST" for method, _ in hub.calls))
+
+    def test_a_gated_repository_is_copied_gated_with_the_same_approval_mode(self):
+        files = {"README.md": b"card", "config.json": b"{}", "model.safetensors": b"w" * 50}
+        for mode in ("auto", "manual"):
+            hub = FakeHub(files, gated=mode)
+            with mock.patch.dict(mirror.os.environ, {"HF_TOKEN": "read-token"}), \
+                    mock.patch.object(mirror, "hf_read", hub.hf_read):
+                result = self.run_sync(hub)
+            self.assertEqual(result["state"], "synced")
+            self.assertEqual(hub.ms, files)
+            self.assertEqual((hub.created[0]["visibility"], hub.created[0]["gated_mode"]), ("gated", mode))
+            self.assertEqual(len(hub.gated_reads), 2)  # the files kept in git, read with the token
+
+    def test_a_new_gate_on_the_hub_reaches_modelscope(self):
+        files = {"README.md": b"card"}
+        hub = FakeHub(files, ms_files=files, gated="auto")
+        with mock.patch.dict(mirror.os.environ, {"HF_TOKEN": "read-token"}), \
+                mock.patch.object(mirror, "hf_read", hub.hf_read):
+            result = self.run_sync(hub)
+        self.assertEqual(result["state"], "in-sync")
+        self.assertEqual(hub.access_changes, [{"visibility": "gated", "gated_mode": "auto"}])
+
+    def test_a_card_that_embeds_hub_files_is_named(self):
+        self.assertIsNone(mirror.card_problem(b'<img src="https://media.empiriolabs.ai/assets/hf/x/v1/r.png">'))
+        self.assertIsNone(mirror.card_problem(b'[page](https://huggingface.co/empiriolabsai/x/blob/main/LICENSE)'))
+        self.assertIn("1 file", mirror.card_problem(
+            b'<audio src="https://huggingface.co/empiriolabsai/x/resolve/main/samples/a.wav"></audio>'))
+        self.assertIn("1 file", mirror.card_problem(
+            b'<audio src="https://media.empiriolabs.ai/assets/hf/x/files/0123456789abcdef/a.wav"></audio>'))
+        self.assertIsNone(mirror.card_problem(None))
 
     def test_a_digest_that_does_not_match_fails_the_upload(self):
         class Source:
@@ -262,7 +330,7 @@ class SyncFlow(unittest.TestCase):
             def close(self):
                 pass
 
-        with mock.patch.object(mirror.urllib.request, "urlopen", lambda *a, **k: Source(b"tampered")), \
+        with mock.patch.object(mirror.HF_OPENER, "open", lambda *a, **k: Source(b"tampered")), \
                 mock.patch.object(mirror.httpclient, "HTTPSConnection", Conn):
             with self.assertRaises(mirror.MirrorError):
                 mirror.stream_blob("https://huggingface.co/x", {"href": "https://store.example/o"}, 8,
