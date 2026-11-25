@@ -612,7 +612,8 @@ def ms_orphans(eligible: set[str]) -> list[str]:
     for kind in KINDS:
         page = 1
         while True:
-            status, payload = get_json(f"{MS}/openapi/v1/{kind}?owner={MS_OWNER}&page_size=100&page_number={page}")
+            # ModelScope answers 400 for a page_size above 50.
+            status, payload = get_json(f"{MS}/openapi/v1/{kind}?owner={MS_OWNER}&page_size=50&page_number={page}")
             if status != 200 or not isinstance(payload, dict):
                 raise MirrorError(f"ModelScope did not list our {kind} (HTTP {status})")
             items = (payload.get("data") or {}).get(kind) or []
@@ -621,7 +622,7 @@ def ms_orphans(eligible: set[str]) -> list[str]:
                 owner, _, name = repo_id.partition("/")
                 if owner == MS_OWNER and f"{kind}/{name}" not in eligible:
                     found.append(f"{kind}/{name}")
-            if len(items) < 100:
+            if len(items) < 50:
                 break
             page += 1
     return sorted(found)
@@ -653,7 +654,6 @@ def record(results_dir: str | None) -> int:
                 results.append({"repo": path.stem, "state": "failed", "reason": "unreadable result"})
     entries = plan()
     eligible = {e["repo"] for e in entries if e["state"] != "skipped"}
-    orphans = ms_orphans(eligible)
     state = {e["repo"]: {"hf_sha": e["hf_sha"], "modelscope": e["modelscope"], "state": e["state"],
                          **({"reason": e["reason"]} if e.get("reason") else {})} for e in entries}
     STATE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -669,6 +669,10 @@ def record(results_dir: str | None) -> int:
     problems += [f"{e['repo']}: still differs ({e.get('reason')})" for e in entries
                  if e["state"] == "sync" and not any(r.get("repo") == e["repo"] and r.get("state") == "incomplete"
                                                       for r in results)]
+    try:
+        orphans = ms_orphans(eligible)
+    except MirrorError as err:
+        orphans, problems = [], problems + [str(err)]
     problems += [f"{o}: on ModelScope, but not a copied Hugging Face repository (rename, removal or a new gate; "
                  "decide whether to delete it by hand)" for o in orphans]
     incomplete = [r for r in results if r.get("state") == "incomplete" and r.get("uploaded_bytes", 0) > 0]
@@ -679,7 +683,8 @@ def record(results_dir: str | None) -> int:
     out = os.environ.get("GITHUB_OUTPUT")
     if out:
         with open(out, "a", encoding="utf-8") as handle:
-            handle.write(f"continue={'true' if incomplete and not problems else 'false'}\n")
+            # A copy that ran out of time but moved bytes goes on in a new run, even when another one failed.
+            handle.write(f"continue={'true' if incomplete else 'false'}\n")
     for problem in problems:
         log(f"::error::{problem}")
     return 1 if problems else 0

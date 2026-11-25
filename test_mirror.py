@@ -279,6 +279,23 @@ class Record(unittest.TestCase):
             self.assertTrue(text.startswith("intro\n") and text.endswith("outro\n"))
             self.assertEqual(json.loads(state.read_text(encoding="utf-8"))["models/b"]["state"], "sync")
 
+    def test_a_failed_listing_still_records_and_fails_the_run(self):
+        def broken(eligible):
+            raise mirror.MirrorError("ModelScope did not list our models (HTTP 400)")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            readme = Path(tmp) / "README.md"
+            readme.write_text(f"{mirror.TABLE_START}\n{mirror.TABLE_END}\n", encoding="utf-8")
+            state = Path(tmp) / "mirrored.json"
+            entries = [{"repo": "models/a", "state": "in-sync", "hf_sha": SHA, "modelscope": "https://m/a"}]
+            with mock.patch.object(mirror, "README", readme), mock.patch.object(mirror, "STATE", state), \
+                    mock.patch.object(mirror, "plan", lambda only=None: entries), \
+                    mock.patch.object(mirror, "ms_orphans", broken), \
+                    mock.patch.object(mirror, "log", lambda *_: None):
+                self.assertEqual(mirror.record(None), 1)
+            self.assertIn("empiriolabsai/a", readme.read_text(encoding="utf-8"))
+            self.assertTrue(state.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
