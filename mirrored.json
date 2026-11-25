@@ -121,7 +121,7 @@
   },
   "spaces/canora-text-to-speech": {
     "access": "public",
-    "hf_sha": "3a329136c434c18037fac2611448a0516a018533",
+    "hf_sha": "6a813523e3a350d0e2eb202cfeb0051dca14fdd6",
     "modelscope": "https://www.modelscope.cn/studios/empiriolabs/canora-text-to-speech",
     "state": "in-sync"
   },
