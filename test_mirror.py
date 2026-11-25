@@ -33,13 +33,22 @@ class PureFunctions(unittest.TestCase):
         self.assertFalse(mirror.goes_to_storage("g2p.py", {"lfs": False, "size": 90_000}))
         self.assertTrue(mirror.goes_to_storage("big.txt", {"lfs": False, "size": mirror.INLINE_MAX + 1}))
 
-    def test_only_public_ungated_repositories_are_copied(self):
-        self.assertIsNone(mirror.skip_reason({"private": False, "gated": False, "disabled": False}))
-        self.assertIn("gated", mirror.skip_reason({"private": False, "gated": "auto"}))
-        self.assertIn("gated", mirror.skip_reason({"private": False, "gated": "manual"}))
-        self.assertIn("private", mirror.skip_reason({"private": True, "gated": False}))
-        self.assertIn("private", mirror.skip_reason({"gated": False}))  # a missing field is not taken as public
-        self.assertIn("disabled", mirror.skip_reason({"private": False, "gated": False, "disabled": True}))
+    def test_only_public_ungated_licensed_repositories_are_copied(self):
+        card = {"cardData": {"license": "apache-2.0"}}
+        self.assertIsNone(mirror.skip_reason({"private": False, "gated": False, "disabled": False, **card}))
+        self.assertIn("gated", mirror.skip_reason({"private": False, "gated": "auto", **card}))
+        self.assertIn("gated", mirror.skip_reason({"private": False, "gated": "manual", **card}))
+        self.assertIn("private", mirror.skip_reason({"private": True, "gated": False, **card}))
+        self.assertIn("private", mirror.skip_reason({"gated": False, **card}))  # a missing field is not taken as public
+        self.assertIn("disabled", mirror.skip_reason({"private": False, "gated": False, "disabled": True, **card}))
+        for no_license in ({}, {"cardData": {}}, {"cardData": {"license": ""}}, {"cardData": {"license": ["mit"]}}):
+            self.assertIn("no license", mirror.skip_reason({"private": False, "gated": False, **no_license}))
+
+    def test_a_custom_license_carries_its_name_and_link(self):
+        info = {"cardData": {"license": "other", "license_name": "aplomb", "license_link": "LICENSE.md"}}
+        self.assertEqual(mirror.card_license(info),
+                         {"license": "other", "license_name": "aplomb", "license_link": "LICENSE.md"})
+        self.assertEqual(mirror.card_license({"cardData": {"license": "mit", "license_name": "x"}}), {"license": "mit"})
 
     def test_unsafe_paths_are_refused(self):
         for path in ("../x", "/etc/passwd", "a/../b", "a//b", "a\\b", "", "a/./b", "a\nb"):
@@ -174,10 +183,11 @@ class SyncFlow(unittest.TestCase):
         self.assertEqual(kinds, {"README.md": "normal", "canora.pth": "lfs", "voices/a.safetensors": "lfs",
                                  "g2p.py": "normal"})
 
-    def test_a_card_without_a_license_is_created_without_one(self):
+    def test_a_card_without_a_license_is_not_copied(self):
         hub = FakeHub({"README.md": b"# x"}, license_id=None)
-        self.run_sync(hub)
-        self.assertEqual(hub.created[0]["license"], "")
+        with self.assertRaises(mirror.MirrorError):
+            self.run_sync(hub)
+        self.assertEqual(hub.created, [])
 
     def test_only_changes_are_sent_and_extra_files_are_deleted(self):
         files = {"README.md": b"new card", "canora.pth": b"weights"}

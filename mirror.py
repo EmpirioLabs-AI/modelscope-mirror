@@ -157,7 +157,23 @@ def skip_reason(info: dict) -> str | None:
         return "gated on Hugging Face: downloads need an accepted agreement"
     if info.get("disabled"):
         return "disabled on Hugging Face"
+    # ModelScope gives a repository created without a license its own default (Apache 2.0, seen 2026-11-24), so a
+    # card that states none would be published under a license it never gave. It is copied once its card has one.
+    card = info.get("cardData") or {}
+    if not isinstance(card.get("license"), str) or not card["license"].strip():
+        return "no license on its Hugging Face card"
     return None
+
+
+def card_license(info: dict) -> dict:
+    """The create request's license fields, from the Hugging Face card."""
+    card = info.get("cardData") or {}
+    fields = {"license": str(card["license"]).strip()}
+    if fields["license"] == "other":
+        for key in ("license_name", "license_link"):
+            if isinstance(card.get(key), str) and card[key].strip():
+                fields[key] = card[key].strip()
+    return fields
 
 
 def hf_file_url(kind: str, name: str, sha: str, path: str) -> str:
@@ -286,10 +302,11 @@ def ms_files(kind: str, name: str, token: str | None = None, *, new: bool = Fals
     return files
 
 
-def ms_create(kind: str, name: str, license_id: str | None, token: str) -> None:
-    # The license is the Hugging Face card's. A card without one is created without one (an empty value): left out,
-    # ModelScope would fill in its own default and claim a license the source never gave.
-    payload = {"owner": MS_OWNER, "repo_name": name, "visibility": "public", "license": license_id or ""}
+def ms_create(kind: str, name: str, license_fields: dict, token: str) -> None:
+    """A public repository with the Hugging Face card's license (skip_reason refuses a card without one)."""
+    if not license_fields.get("license"):
+        raise MirrorError(f"{kind}/{name}: no license to create it with")
+    payload = {"owner": MS_OWNER, "repo_name": name, "visibility": "public", **license_fields}
     status, data, _ = http("POST", f"{MS}/openapi/v1/{kind}", headers=ms_headers(token, json_body=True),
                            body=json.dumps(payload).encode(), attempts=2)
     if 200 <= status < 300:
@@ -504,9 +521,7 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
     if ms_exists(kind, name, token):
         copy = ms_files(kind, name, token)
     else:
-        card = info.get("cardData") or {}
-        license_id = card.get("license") if isinstance(card.get("license"), str) else None
-        ms_create(kind, name, license_id, token)
+        ms_create(kind, name, card_license(info), token)
         copy = ms_files(kind, name, token, new=True)
     write, delete = diff(source, copy)
     log(f"{repo}@{sha[:12]}: {len(source)} files on Hugging Face, {len(copy)} on ModelScope; "
