@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Keep EmpirioLabs AI's open models and datasets on ModelScope identical to Hugging Face.
+"""Keep EmpirioLabs AI's open models, datasets and static Spaces on ModelScope identical to Hugging Face.
 
-Hugging Face (organization empiriolabsai) is the one source. Every public model and dataset there that needs no
-access agreement gets a repository of the same name on ModelScope (account empiriolabs) holding the same files: each
+Hugging Face (organization empiriolabsai) is the one source. Every public or gated model and dataset there whose card
+states a license gets a repository of the same name on ModelScope (account empiriolabs) holding the same files: each
 file's SHA-256 on ModelScope equals its SHA-256 on Hugging Face, and a file removed from Hugging Face is removed from
-ModelScope. Gated or private repositories are never copied, and neither are Spaces (their in-browser demos load
-their models from Hugging Face).
+ModelScope. A gated repository is copied gated, with the same approval mode. Each static Space becomes a static
+Studio with the same files and its card in ModelScope's format (studio_readme). Private repositories are never copied.
 
     python3 mirror.py plan [--only NAME ...]   what differs; no credential; writes `repos` and `any` to $GITHUB_OUTPUT
     python3 mirror.py sync KIND/NAME           make one ModelScope repository match; needs MODELSCOPE_TOKEN

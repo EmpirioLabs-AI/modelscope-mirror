@@ -1,6 +1,6 @@
 # ModelScope mirror
 
-Keeps the open models and datasets that [EmpirioLabs AI](https://empiriolabs.ai) publishes on
+Keeps the open models, datasets and in-browser demos that [EmpirioLabs AI](https://empiriolabs.ai) publishes on
 [Hugging Face](https://huggingface.co/empiriolabsai) available on [ModelScope](https://www.modelscope.cn/profile/empiriolabs),
 file for file.
 
@@ -9,7 +9,8 @@ file for file.
 Every public model and dataset of the `empiriolabsai` organization on Hugging Face that states a license on its card
 is copied to a repository of the same name under `empiriolabs` on ModelScope. Each file on ModelScope has the same
 SHA-256 as on Hugging Face, and a file removed from Hugging Face is removed from ModelScope. A gated repository is
-copied gated, with the same approval mode. Spaces are not copied. The copies are checked every six hours.
+copied gated, with the same approval mode. Each static Space becomes a static Studio of the same name, with the same
+files and a card written in ModelScope's format. The copies are checked every six hours.
 
 Hugging Face is the source: model cards, issues and discussions live there.
 
