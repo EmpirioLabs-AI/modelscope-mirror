@@ -77,9 +77,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Runs after every plan, a copy or not: each run re-checks every repository and fails loudly on any difference.
   record:
     needs: [plan, sync]
-    if: always() && needs.plan.outputs.any == 'true'
+    if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
