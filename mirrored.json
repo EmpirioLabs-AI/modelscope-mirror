@@ -12,8 +12,8 @@
   "datasets/decision-index-results-aplomb-1": {
     "hf_sha": "7a459c5a71fb4e2a847e737066f2c6c3c5c8c414",
     "modelscope": "https://www.modelscope.cn/datasets/empiriolabs/decision-index-results-aplomb-1",
-    "reason": "not on ModelScope yet",
-    "state": "sync"
+    "reason": "no license on its Hugging Face card",
+    "state": "skipped"
   },
   "models/aplomb-1": {
     "hf_sha": "1225d382f51a29d04c888cdadc8b94f21261c7b2",

@@ -37,7 +37,7 @@ Hugging Face is the source: model cards, issues and discussions live there.
 | [empiriolabsai/speaker-age](https://huggingface.co/empiriolabsai/speaker-age) | [empiriolabs/speaker-age](https://www.modelscope.cn/models/empiriolabs/speaker-age) | `ce82c3d204c6` |
 | [empiriolabsai/speaker-gender](https://huggingface.co/empiriolabsai/speaker-gender) | [empiriolabs/speaker-gender](https://www.modelscope.cn/models/empiriolabs/speaker-gender) | `ba8aead476ae` |
 
-Not copied: `models/aplomb-1`, gated on Hugging Face: downloads need an accepted agreement.
+Not copied: `datasets/decision-index-results-aplomb-1`, no license on its Hugging Face card; `models/aplomb-1`, gated on Hugging Face: downloads need an accepted agreement.
 <!-- mirror:end -->
 
 ## License
