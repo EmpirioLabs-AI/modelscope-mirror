@@ -105,6 +105,27 @@ class PureFunctions(unittest.TestCase):
             with self.assertRaises(mirror.MirrorError):
                 mirror.plan_one("models", "aplomb-1")
 
+    def test_a_space_card_becomes_a_studio_card(self):
+        space = ("---\ntitle: Canora text-to-speech\nemoji: x\nsdk: static\napp_file: index.html\npinned: true\n"
+                 "license: apache-2.0\nshort_description: Speak in ten languages\nmodels:\n"
+                 "  - empiriolabsai/canora-dutch\n  - empiriolabsai/canora-french\n  - someone/else\n"
+                 "tags:\n  - text-to-speech\n  - in-browser\ncustom_headers:\n  cross-origin-opener-policy: same-origin\n"
+                 "---\n\n# Canora\n\nBody text.\n")
+        studio = mirror.studio_readme(space)
+        self.assertTrue(studio.startswith("---\ndomain:\n  - audio\ntags:\n  - text-to-speech\n  - in-browser\n"))
+        self.assertIn("models:\n  - empiriolabs/canora-dutch\n  - empiriolabs/canora-french\n", studio)
+        self.assertNotIn("someone/else", studio)
+        self.assertIn("deployspec:\n  entry_file: index.html\nlicense: Apache License 2.0\n---\n# Canora\n\nBody text.\n",
+                      studio)
+        self.assertNotIn("custom_headers", studio)
+
+    def test_only_static_spaces_become_studios(self):
+        card = {"cardData": {"license": "apache-2.0"}, "private": False, "gated": False}
+        self.assertIsNone(mirror.skip_reason({**card, "sdk": "static"}))
+        self.assertIn("gradio", mirror.skip_reason({**card, "sdk": "gradio"}))
+        self.assertEqual(mirror.desired({**card, "sdk": "static"}), {"visibility": "public"})
+        self.assertEqual(mirror.ms_repo_url("spaces", "canora"), "https://www.modelscope.cn/studios/empiriolabs/canora")
+
     def test_access_follows_the_hub(self):
         self.assertEqual(mirror.access({"gated": False}), {"visibility": "public"})
         self.assertEqual(mirror.access({"gated": "auto"}), {"visibility": "gated", "gated_mode": "auto"})

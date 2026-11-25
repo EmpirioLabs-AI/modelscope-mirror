@@ -36,7 +36,10 @@ HF = "https://huggingface.co"
 MS = "https://www.modelscope.cn"
 HF_ORG = "empiriolabsai"
 MS_OWNER = "empiriolabs"
-KINDS = ("models", "datasets")
+KINDS = ("models", "datasets", "spaces")
+# Hugging Face kind -> ModelScope kind: a static Space is copied as a static Studio (ModelScope's Spaces).
+MS_KIND = {"models": "models", "datasets": "datasets", "spaces": "studios"}
+STUDIO_HARDWARE = "platform/2v-cpu-8g-mem"   # the free tier ModelScope offers static Studios (2026-11-25)
 USER_AGENT = "empiriolabs-modelscope-mirror/1 (+https://github.com/EmpirioLabs-AI/modelscope-mirror)"
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -139,7 +142,8 @@ def hf_repos() -> list[tuple[str, str]]:
             found.append((kind, name))
     if not any(kind == "models" for kind, _ in found):
         raise MirrorError("Hugging Face listed no models for the organization; refusing to plan from that")
-    return sorted(found)
+    # The organization card is a Space named README; it is the Hub's own page, not an app.
+    return sorted(r for r in found if r != ("spaces", "README"))
 
 
 def hf_info(kind: str, name: str) -> dict:
@@ -184,9 +188,77 @@ def access(info: dict) -> dict:
 
 def desired(info: dict) -> dict:
     """Every ModelScope setting that follows the Hub: access, and the card's license (so a license changed on the
-    Hub is changed on ModelScope too). Compared with ms_access."""
+    Hub is changed on ModelScope too). Compared with ms_access. A Studio only follows public access."""
+    if "sdk" in info:
+        return {"visibility": "public"}
     card = info.get("cardData") or {}
     return {**access(info), "license": str(card.get("license") or "").strip().lower()}
+
+
+STUDIO_LICENSES = {"apache-2.0": "Apache License 2.0", "mit": "MIT License"}
+
+
+def _front(text: str) -> tuple[str, str]:
+    """(front matter, body) of a card; ("", text) when it has none."""
+    if not text.startswith("---\n"):
+        return "", text
+    head, sep, body = text[4:].partition("\n---\n")
+    return (head, body) if sep else ("", text)
+
+
+def _list_after(head: str, key: str) -> list[str]:
+    """The items of a top-level YAML list `key:` in a card's front matter (the simple form Hub cards use)."""
+    out, inside = [], False
+    for line in head.split("\n"):
+        if re.match(rf"^{re.escape(key)}:\s*$", line):
+            inside = True
+            continue
+        if inside:
+            m = re.match(r"^\s+-\s+(.+?)\s*$", line)
+            if m:
+                out.append(m.group(1).strip("'\""))
+            elif line.strip() and not line.startswith(" "):
+                break
+    return out
+
+
+def _scalar(head: str, key: str) -> str:
+    m = re.search(rf"^{re.escape(key)}:\s*(.+?)\s*$", head, flags=re.M)
+    return m.group(1).strip("'\"") if m else ""
+
+
+def studio_readme(text: str) -> str:
+    """A Space card as a Studio card: ModelScope's front matter (its domain, tags, the ModelScope copies of the models
+    the app uses, the entry file and the license) and the Space card's own body. Derived on every run, so the Studio
+    follows the Space."""
+    head, body = _front(text.replace("\r\n", "\n"))
+    tags = _list_after(head, "tags")
+    models = [m.replace(f"{HF_ORG}/", f"{MS_OWNER}/", 1) for m in _list_after(head, "models")
+              if m.startswith(f"{HF_ORG}/")]
+    audio = {"text-to-speech", "tts", "speech-synthesis", "audio-classification", "speech"}
+    domain = (["audio"] if audio & set(tags) else []) + (["nlp"] if "text-classification" in tags else [])
+    license_id = _scalar(head, "license")
+    lines = ["---"]
+    if domain:
+        lines += ["domain:"] + [f"  - {d}" for d in domain]
+    if tags:
+        lines += ["tags:"] + [f"  - {t}" for t in tags]
+    if models:
+        lines += ["models:"] + [f"  - {m}" for m in models]
+    lines += ["deployspec:", "  entry_file: " + (_scalar(head, "app_file") or "index.html")]
+    if license_id:
+        lines.append(f"license: {STUDIO_LICENSES.get(license_id.lower(), license_id)}")
+    lines.append("---")
+    return "\n".join(lines) + "\n" + body.lstrip("\n")
+
+
+def as_studio(source: dict[str, dict], contents: dict[str, bytes]) -> None:
+    """Replace the Space card in `source` and `contents` with its Studio form (studio_readme)."""
+    if "README.md" not in contents:
+        return
+    data = studio_readme(contents["README.md"].decode("utf-8")).encode("utf-8")
+    contents["README.md"] = data
+    source["README.md"] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "lfs": False}
 
 
 def skip_reason(info: dict) -> str | None:
@@ -199,6 +271,8 @@ def skip_reason(info: dict) -> str | None:
         return "gated on Hugging Face"
     if info.get("disabled"):
         return "disabled on Hugging Face"
+    if "sdk" in info and info.get("sdk") != "static":
+        return f"a {info.get('sdk')} Space (only static Spaces become Studios)"
     # ModelScope gives a repository created without a license its own default (Apache 2.0, seen 2026-11-24), so a
     # card that states none would be published under a license it never gave. It is copied once its card has one.
     card = info.get("cardData") or {}
@@ -327,11 +401,13 @@ def ms_headers(token: str | None, *, json_body: bool = False) -> dict:
 
 
 def ms_repo_url(kind: str, name: str) -> str:
-    return f"{MS}/{kind}/{MS_OWNER}/{name}"
+    return f"{MS}/{MS_KIND[kind]}/{MS_OWNER}/{name}"
 
 
 def ms_exists(kind: str, name: str, token: str | None = None) -> bool:
-    status, _, _ = http("GET", f"{MS}/api/v1/{kind}/{MS_OWNER}/{name}", headers=ms_headers(token))
+    url = (f"{MS}/openapi/v1/studios/{MS_OWNER}/{name}" if kind == "spaces"
+           else f"{MS}/api/v1/{kind}/{MS_OWNER}/{name}")
+    status, _, _ = http("GET", url, headers=ms_headers(token))
     if status == 200:
         return True
     if status == 404:
@@ -350,8 +426,9 @@ def ms_files(kind: str, name: str, token: str | None = None, *, new: bool = Fals
     """path -> {size, sha256, lfs} on the master branch. `new`: the repository was just created, so a listing
     that is not there yet means no files."""
     raw: list = []
-    if kind == "models":
-        url = f"{MS}/api/v1/models/{MS_OWNER}/{name}/repo/files?Revision=master&Recursive=True"
+    if kind in ("models", "spaces"):
+        segment = "models" if kind == "models" else "studio"   # a Studio's listing is under /api/v1/studio/
+        url = f"{MS}/api/v1/{segment}/{MS_OWNER}/{name}/repo/files?Revision=master&Recursive=True"
         status, payload = get_json(url, headers=ms_headers(token))
         if status == 404 and new:
             return {}
@@ -388,10 +465,12 @@ def ms_files(kind: str, name: str, token: str | None = None, *, new: bool = Fals
 
 def ms_access(kind: str, name: str, token: str | None = None) -> dict:
     """The repository's access on ModelScope, in the fields access() writes."""
-    status, payload = get_json(f"{MS}/openapi/v1/{kind}/{MS_OWNER}/{name}", headers=ms_headers(token))
+    status, payload = get_json(f"{MS}/openapi/v1/{MS_KIND[kind]}/{MS_OWNER}/{name}", headers=ms_headers(token))
     data = payload.get("data") if isinstance(payload, dict) else None
     if status != 200 or not isinstance(data, dict):
         raise MirrorError(f"ModelScope did not describe {kind}/{name} (HTTP {status})")
+    if kind == "spaces":
+        return {"visibility": str(data.get("visibility") or ("private" if data.get("private") else "public"))}
     license_id = str(data.get("license") or "").strip().lower()
     if data.get("gated"):
         mode = str(data.get("gated_mode") or "auto").lower()
@@ -400,7 +479,7 @@ def ms_access(kind: str, name: str, token: str | None = None) -> dict:
 
 
 def ms_set_access(kind: str, name: str, fields: dict, token: str) -> None:
-    status, data, _ = http("PATCH", f"{MS}/openapi/v1/{kind}/{MS_OWNER}/{name}/settings",
+    status, data, _ = http("PATCH", f"{MS}/openapi/v1/{MS_KIND[kind]}/{MS_OWNER}/{name}/settings",
                            headers=ms_headers(token, json_body=True), body=json.dumps(fields).encode(), attempts=2)
     if not 200 <= status < 300:
         raise MirrorError(f"ModelScope refused the access change for {kind}/{name} (HTTP {status}): "
@@ -408,13 +487,25 @@ def ms_set_access(kind: str, name: str, fields: dict, token: str) -> None:
     log(f"{kind}/{name}: access set to {fields}")
 
 
-def ms_create(kind: str, name: str, license_fields: dict, token: str, access_fields: dict | None = None) -> None:
+def ms_create(kind: str, name: str, license_fields: dict, token: str, access_fields: dict | None = None,
+              info: dict | None = None) -> None:
     """A repository with the Hugging Face card's license (skip_reason refuses a card without one) and the Hub's
-    access: public, or gated with the same approval mode."""
+    access: public, or gated with the same approval mode. A static Space becomes a public static Studio on the
+    free hardware, with the Space's title and short description."""
     if not license_fields.get("license"):
         raise MirrorError(f"{kind}/{name}: no license to create it with")
-    payload = {"owner": MS_OWNER, "repo_name": name, **(access_fields or {"visibility": "public"}), **license_fields}
-    status, data, _ = http("POST", f"{MS}/openapi/v1/{kind}", headers=ms_headers(token, json_body=True),
+    if kind == "spaces":
+        card = (info or {}).get("cardData") or {}
+        lic = license_fields["license"]
+        payload = {"owner": MS_OWNER, "repo_name": name, "visibility": "public", "private": False,
+                   "sdk_type": "static", "hardware": STUDIO_HARDWARE,
+                   "license": STUDIO_LICENSES.get(lic.lower(), lic),
+                   **({"display_name": str(card["title"])} if card.get("title") else {}),
+                   **({"description": str(card["short_description"])} if card.get("short_description") else {})}
+    else:
+        payload = {"owner": MS_OWNER, "repo_name": name, **(access_fields or {"visibility": "public"}),
+                   **license_fields}
+    status, data, _ = http("POST", f"{MS}/openapi/v1/{MS_KIND[kind]}", headers=ms_headers(token, json_body=True),
                            body=json.dumps(payload).encode(), attempts=2)
     if 200 <= status < 300:
         log(f"created {ms_repo_url(kind, name)}")
@@ -426,12 +517,22 @@ def ms_create(kind: str, name: str, license_fields: dict, token: str, access_fie
     raise MirrorError(f"ModelScope refused to create {kind}/{name} (HTTP {status}): {text}")
 
 
+def ms_deploy(name: str, token: str) -> None:
+    """Start (or restart) a Studio so it serves the files just committed."""
+    status, data, _ = http("POST", f"{MS}/openapi/v1/studios/{MS_OWNER}/{name}/deploy",
+                           headers=ms_headers(token, json_body=True), body=b"{}", attempts=2)
+    if not 200 <= status < 300:
+        raise MirrorError(f"ModelScope did not deploy studios/{name} (HTTP {status}): "
+                          f"{data.decode('utf-8', 'replace')[:300]}")
+    log(f"spaces/{name}: deployed {ms_repo_url('spaces', name)}")
+
+
 def presign(kind: str, name: str, objects: list[dict], token: str) -> dict[str, dict | None]:
     """oid -> the upload action for each object ModelScope still needs; None for one it already stores."""
     out: dict[str, dict | None] = {}
     for start in range(0, len(objects), BATCH_OBJECTS):
         chunk = objects[start:start + BATCH_OBJECTS]
-        status, data, _ = http("POST", f"{MS}/api/v1/repos/{kind}/{MS_OWNER}/{name}/info/lfs/objects/batch",
+        status, data, _ = http("POST", f"{MS}/api/v1/repos/{MS_KIND[kind]}/{MS_OWNER}/{name}/info/lfs/objects/batch",
                                headers=ms_headers(token, json_body=True),
                                body=json.dumps({"operation": "upload", "objects": chunk}).encode())
         if status != 200:
@@ -513,7 +614,7 @@ def stream_blob(url: str, action: dict, size: int, oid: str, token: str, gated: 
 
 
 def commit(kind: str, name: str, actions: list[dict], message: str, token: str) -> None:
-    status, data, _ = http("POST", f"{MS}/api/v1/repos/{kind}/{MS_OWNER}/{name}/commit/master",
+    status, data, _ = http("POST", f"{MS}/api/v1/repos/{MS_KIND[kind]}/{MS_OWNER}/{name}/commit/master",
                            headers=ms_headers(token, json_body=True), timeout=300,
                            body=json.dumps({"commit_message": message, "actions": actions}).encode())
     text = data.decode("utf-8", "replace")
@@ -540,7 +641,8 @@ def ms_read_token(gated: bool) -> str | None:
 
 def ms_text(kind: str, name: str, path: str, token: str | None) -> str:
     """One small file of the copy, as text."""
-    url = (f"{MS}/api/v1/{kind}/{MS_OWNER}/{name}/repo?Revision=master&FilePath="
+    segment = {"models": "models", "datasets": "datasets", "spaces": "studio"}[kind]
+    url = (f"{MS}/api/v1/{segment}/{MS_OWNER}/{name}/repo?Revision=master&FilePath="
            f"{urllib.parse.quote(path, safe='')}")
     status, data, _ = http("GET", url, headers=ms_headers(token))
     if status != 200:
@@ -606,6 +708,8 @@ def plan_one(kind: str, name: str) -> dict:
         raise MirrorError(f"{kind}/{name}: a gated copy can only be read with MODELSCOPE_READ_TOKEN")
     contents: dict[str, bytes] = {}
     source = hf_files(kind, name, info["sha"], contents=contents, gated=gated)
+    if kind == "spaces":
+        as_studio(source, contents)
     problem = card_problem(contents.get("README.md"))
     if problem:
         entry["card"] = problem
@@ -690,13 +794,15 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
     want = desired(info)
     contents: dict[str, bytes] = {}
     source = hf_files(kind, name, sha, contents=contents, gated=gated)
+    if kind == "spaces":
+        as_studio(source, contents)
     started = time.monotonic()
     if ms_exists(kind, name, token):
         copy = ms_files(kind, name, token)
         if ms_access(kind, name, token) != want:  # the Hub's gate or license changed: ModelScope follows
             ms_set_access(kind, name, want, token)
     else:
-        ms_create(kind, name, card_license(info), token, want)
+        ms_create(kind, name, card_license(info), token, want, info)
         copy = ms_files(kind, name, token, new=True)
     write, delete = diff(source, copy)
     write = settle_gitattributes(kind, name, source, copy, write, token, contents.get(".gitattributes"))
@@ -784,6 +890,8 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
         commit(kind, name, batch, message, token)
     log(f"{repo}: committed {len(actions)} changes in {len(batches)} commit(s) "
         f"after {time.monotonic() - started:.0f} s")
+    if kind == "spaces":
+        ms_deploy(name, token)
 
     after = ms_files(kind, name, token)
     left_write, left_delete = diff(source, after)
@@ -809,10 +917,12 @@ def ms_orphans(eligible: set[str]) -> list[str]:
         page = 1
         while True:
             # ModelScope answers 400 for a page_size above 50.
-            status, payload = get_json(f"{MS}/openapi/v1/{kind}?owner={MS_OWNER}&page_size=50&page_number={page}")
+            ms = MS_KIND[kind]
+            status, payload = get_json(f"{MS}/openapi/v1/{ms}?owner={MS_OWNER}&page_size=50&page_number={page}")
             if status != 200 or not isinstance(payload, dict):
-                raise MirrorError(f"ModelScope did not list our {kind} (HTTP {status})")
-            items = (payload.get("data") or {}).get(kind) or []
+                raise MirrorError(f"ModelScope did not list our {ms} (HTTP {status})")
+            items = [i for i in ((payload.get("data") or {}).get(ms) or [])
+                     if str(i.get("id") or "").startswith(f"{MS_OWNER}/")]
             for item in items:
                 repo_id = str(item.get("id") or "")
                 owner, _, name = repo_id.partition("/")
