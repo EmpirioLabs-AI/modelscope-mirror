@@ -1,10 +1,12 @@
 {
   "datasets/aplomb-2-decision-index": {
+    "access": "public",
     "hf_sha": "2fcf74c048a90314c90ebbd948b3cbd2d30ac259",
     "modelscope": "https://www.modelscope.cn/datasets/empiriolabs/aplomb-2-decision-index",
     "state": "in-sync"
   },
   "datasets/aplomb-2-large-decision-index": {
+    "access": "public",
     "hf_sha": "a49128e7aa84cdf0a153adfd2eaf1dd5f029e474",
     "modelscope": "https://www.modelscope.cn/datasets/empiriolabs/aplomb-2-large-decision-index",
     "state": "in-sync"
@@ -18,85 +20,101 @@
   "models/aplomb-1": {
     "hf_sha": "1225d382f51a29d04c888cdadc8b94f21261c7b2",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-1",
-    "reason": "gated on Hugging Face: downloads need an accepted agreement",
+    "reason": "gated on Hugging Face",
     "state": "skipped"
   },
   "models/aplomb-2": {
+    "access": "public",
     "hf_sha": "7fd771706f6501b8356d95088eb25041ab6d57f9",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-2",
     "state": "in-sync"
   },
   "models/aplomb-2-large": {
+    "access": "public",
     "hf_sha": "d02a19e786eae8fa3292b0771158e5af98c9bc5a",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-2-large",
     "state": "in-sync"
   },
   "models/canora-dutch": {
+    "access": "public",
     "hf_sha": "4a4920ea737fc14af4d33eaba01271757ba967e3",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-dutch",
     "state": "in-sync"
   },
   "models/canora-french": {
+    "access": "public",
     "hf_sha": "ad819cc011783a5badb6591e137abd243afaa3ea",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-french",
     "state": "in-sync"
   },
   "models/canora-german": {
+    "access": "public",
     "hf_sha": "eae7fd96ecb3501b53d65c8cb5f2e458f88df88d",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-german",
     "state": "in-sync"
   },
   "models/canora-italian": {
+    "access": "public",
     "hf_sha": "0f2f34378ff39cb3355453a90954b577b95f3f4b",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-italian",
     "state": "in-sync"
   },
   "models/canora-korean": {
+    "access": "public",
     "hf_sha": "ad11531a683672b83385582ac4321a30ebb4d182",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-korean",
     "state": "in-sync"
   },
   "models/canora-norwegian": {
+    "access": "public",
     "hf_sha": "1beb26bfd5ed3669614e02c874ac1d5209225490",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-norwegian",
     "state": "in-sync"
   },
   "models/canora-polish": {
+    "access": "public",
     "hf_sha": "63cffee2f1f05962712df5223c782d1d8a461fbc",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-polish",
     "state": "in-sync"
   },
   "models/canora-portuguese": {
+    "access": "public",
     "hf_sha": "31b9c7c904c196c84c530df7d3211e64dc8cd4b4",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-portuguese",
     "state": "in-sync"
   },
   "models/canora-russian": {
+    "access": "public",
     "hf_sha": "a94b594fce2b86373556baa21c1de0eeca8eb192",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-russian",
     "state": "in-sync"
   },
   "models/canora-spanish": {
+    "access": "public",
     "hf_sha": "37d88fb270e7501cf2796ee78306d06afbf67877",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-spanish",
     "state": "in-sync"
   },
   "models/canora-turkish": {
+    "access": "public",
     "hf_sha": "26d21703451b577bd6f63a2e5f6895122dd59263",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/canora-turkish",
     "state": "in-sync"
   },
   "models/finance-sentiment": {
+    "access": "public",
     "hf_sha": "3a8b18872151f58967817b3232d914d4078635fb",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/finance-sentiment",
     "state": "in-sync"
   },
   "models/speaker-age": {
+    "access": "public",
     "hf_sha": "ce82c3d204c68fb8e1379c382eee90e74b963d65",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/speaker-age",
     "state": "in-sync"
   },
   "models/speaker-gender": {
+    "access": "public",
     "hf_sha": "ba8aead476ae327c9edd2b3f7e880dfed85fef99",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/speaker-gender",
     "state": "in-sync"
