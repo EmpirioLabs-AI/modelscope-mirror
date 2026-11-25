@@ -20,6 +20,7 @@ Hugging Face is the source: model cards, issues and discussions live there.
 |---|---|---|
 | [empiriolabsai/aplomb-2-decision-index](https://huggingface.co/datasets/empiriolabsai/aplomb-2-decision-index) | [empiriolabs/aplomb-2-decision-index](https://www.modelscope.cn/datasets/empiriolabs/aplomb-2-decision-index) | `2fcf74c048a9` |
 | [empiriolabsai/aplomb-2-large-decision-index](https://huggingface.co/datasets/empiriolabsai/aplomb-2-large-decision-index) | [empiriolabs/aplomb-2-large-decision-index](https://www.modelscope.cn/datasets/empiriolabs/aplomb-2-large-decision-index) | `a49128e7aa84` |
+| [empiriolabsai/aplomb-1](https://huggingface.co/empiriolabsai/aplomb-1) | [empiriolabs/aplomb-1](https://www.modelscope.cn/models/empiriolabs/aplomb-1) (gated) | `1225d382f51a` |
 | [empiriolabsai/aplomb-2](https://huggingface.co/empiriolabsai/aplomb-2) | [empiriolabs/aplomb-2](https://www.modelscope.cn/models/empiriolabs/aplomb-2) | `7fd771706f65` |
 | [empiriolabsai/aplomb-2-large](https://huggingface.co/empiriolabsai/aplomb-2-large) | [empiriolabs/aplomb-2-large](https://www.modelscope.cn/models/empiriolabs/aplomb-2-large) | `d02a19e786ea` |
 | [empiriolabsai/canora-dutch](https://huggingface.co/empiriolabsai/canora-dutch) | [empiriolabs/canora-dutch](https://www.modelscope.cn/models/empiriolabs/canora-dutch) | `4a4920ea737f` |
@@ -37,7 +38,7 @@ Hugging Face is the source: model cards, issues and discussions live there.
 | [empiriolabsai/speaker-age](https://huggingface.co/empiriolabsai/speaker-age) | [empiriolabs/speaker-age](https://www.modelscope.cn/models/empiriolabs/speaker-age) | `ce82c3d204c6` |
 | [empiriolabsai/speaker-gender](https://huggingface.co/empiriolabsai/speaker-gender) | [empiriolabs/speaker-gender](https://www.modelscope.cn/models/empiriolabs/speaker-gender) | `ba8aead476ae` |
 
-Not copied: `datasets/decision-index-results-aplomb-1`, no license on its Hugging Face card; `models/aplomb-1`, gated on Hugging Face.
+Not copied: `datasets/decision-index-results-aplomb-1`, no license on its Hugging Face card.
 <!-- mirror:end -->
 
 ## License

@@ -18,10 +18,10 @@
     "state": "skipped"
   },
   "models/aplomb-1": {
+    "access": "gated",
     "hf_sha": "1225d382f51a29d04c888cdadc8b94f21261c7b2",
     "modelscope": "https://www.modelscope.cn/models/empiriolabs/aplomb-1",
-    "reason": "gated on Hugging Face",
-    "state": "skipped"
+    "state": "in-sync"
   },
   "models/aplomb-2": {
     "access": "public",
