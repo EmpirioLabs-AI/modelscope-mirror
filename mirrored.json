@@ -12,10 +12,10 @@
     "state": "in-sync"
   },
   "datasets/decision-index-results-aplomb-1": {
-    "hf_sha": "7a459c5a71fb4e2a847e737066f2c6c3c5c8c414",
+    "access": "public",
+    "hf_sha": "757b388ac2270200d31d960071d745e654695fb3",
     "modelscope": "https://www.modelscope.cn/datasets/empiriolabs/decision-index-results-aplomb-1",
-    "reason": "no license on its Hugging Face card",
-    "state": "skipped"
+    "state": "in-sync"
   },
   "models/aplomb-1": {
     "access": "gated",
