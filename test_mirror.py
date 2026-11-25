@@ -143,7 +143,7 @@ class FakeHub:
         self.calls: list[tuple[str, str]] = []
         self.commits: list[dict] = []
         self.created: list[dict] = []
-        self.access = {"private": False, "gated": False}  # ModelScope's, once the repository exists
+        self.access = {"private": False, "gated": False, "license": license_id}  # ModelScope's, once it exists
         self.access_changes: list[dict] = []
         self.gated_reads: list[str] = []
 
@@ -161,6 +161,7 @@ class FakeHub:
             fields = json.loads(body)
             self.access_changes.append(fields)
             self.access = {"private": False, "gated": fields["visibility"] == "gated",
+                           "license": fields.get("license", self.access.get("license")),
                            **({"gated_mode": fields["gated_mode"]} if "gated_mode" in fields else {})}
             return 200, b'{"success": true}', {}
         if url.startswith(f"{mirror.HF}/api/models/{mirror.HF_ORG}/canora-test/tree/"):
@@ -189,6 +190,7 @@ class FakeHub:
             self.created.append(payload)
             self.ms = {}
             self.access = {"private": False, "gated": payload.get("visibility") == "gated",
+                           "license": payload.get("license"),
                            **({"gated_mode": payload["gated_mode"]} if "gated_mode" in payload else {})}
             return 200, b'{"success": true}', {}
         if url.endswith("/info/lfs/objects/batch"):
@@ -301,7 +303,16 @@ class SyncFlow(unittest.TestCase):
                 mock.patch.object(mirror, "hf_read", hub.hf_read):
             result = self.run_sync(hub)
         self.assertEqual(result["state"], "in-sync")
-        self.assertEqual(hub.access_changes, [{"visibility": "gated", "gated_mode": "auto"}])
+        self.assertEqual(hub.access_changes, [{"visibility": "gated", "gated_mode": "auto", "license": "apache-2.0"}])
+
+    def test_a_license_changed_on_the_hub_reaches_modelscope(self):
+        files = {"README.md": b"card"}
+        hub = FakeHub(files, ms_files=files, license_id="cc-by-4.0")
+        hub.access["license"] = "apache-2.0"  # what ModelScope says before the run
+        result = self.run_sync(hub)
+        self.assertEqual(result["state"], "in-sync")
+        self.assertEqual(hub.access_changes, [{"visibility": "public", "license": "cc-by-4.0"}])
+        self.assertEqual(hub.commits, [])
 
     def test_a_card_that_embeds_hub_files_is_named(self):
         self.assertIsNone(mirror.card_problem(b'<img src="https://media.empiriolabs.ai/assets/hf/x/v1/r.png">'))

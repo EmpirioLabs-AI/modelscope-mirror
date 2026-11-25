@@ -182,6 +182,13 @@ def access(info: dict) -> dict:
     return {"visibility": "gated", "gated_mode": "manual" if gate == "manual" else "auto"}
 
 
+def desired(info: dict) -> dict:
+    """Every ModelScope setting that follows the Hub: access, and the card's license (so a license changed on the
+    Hub is changed on ModelScope too). Compared with ms_access."""
+    card = info.get("cardData") or {}
+    return {**access(info), "license": str(card.get("license") or "").strip().lower()}
+
+
 def skip_reason(info: dict) -> str | None:
     """Why a repository is not copied, or None when it is."""
     if info.get("private") is not False:
@@ -385,10 +392,11 @@ def ms_access(kind: str, name: str, token: str | None = None) -> dict:
     data = payload.get("data") if isinstance(payload, dict) else None
     if status != 200 or not isinstance(data, dict):
         raise MirrorError(f"ModelScope did not describe {kind}/{name} (HTTP {status})")
+    license_id = str(data.get("license") or "").strip().lower()
     if data.get("gated"):
         mode = str(data.get("gated_mode") or "auto").lower()
-        return {"visibility": "gated", "gated_mode": "manual" if mode == "manual" else "auto"}
-    return {"visibility": "private" if data.get("private") else "public"}
+        return {"visibility": "gated", "gated_mode": "manual" if mode == "manual" else "auto", "license": license_id}
+    return {"visibility": "private" if data.get("private") else "public", "license": license_id}
 
 
 def ms_set_access(kind: str, name: str, fields: dict, token: str) -> None:
@@ -590,7 +598,7 @@ def plan_one(kind: str, name: str) -> dict:
     reason = skip_reason(info)
     if reason:
         return {**entry, "state": "skipped", "reason": reason}
-    want = access(info)
+    want = desired(info)
     entry["access"] = want["visibility"]
     gated = bool(info.get("gated"))
     token = ms_read_token(gated)
@@ -679,13 +687,13 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
         raise MirrorError(f"{repo} is not copied: {reason}")
     sha = info["sha"]
     gated = bool(info.get("gated"))
-    want = access(info)
+    want = desired(info)
     contents: dict[str, bytes] = {}
     source = hf_files(kind, name, sha, contents=contents, gated=gated)
     started = time.monotonic()
     if ms_exists(kind, name, token):
         copy = ms_files(kind, name, token)
-        if ms_access(kind, name, token) != want:  # the Hub's gate changed: ModelScope follows it
+        if ms_access(kind, name, token) != want:  # the Hub's gate or license changed: ModelScope follows
             ms_set_access(kind, name, want, token)
     else:
         ms_create(kind, name, card_license(info), token, want)
@@ -697,7 +705,7 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
     result = {"repo": repo, "hf_sha": sha, "modelscope": ms_repo_url(kind, name)}
     if not write and not delete:
         if ms_access(kind, name, token) != want:
-            return {**result, "state": "failed", "uploaded_bytes": 0, "reason": "ModelScope did not take the access"}
+            return {**result, "state": "failed", "uploaded_bytes": 0, "reason": "ModelScope did not take the settings"}
         return {**result, "state": "in-sync", "uploaded_bytes": 0}
 
     stored = [p for p in write if goes_to_storage(p, source[p])]
@@ -785,7 +793,7 @@ def sync(repo: str, token: str, *, deadline: float) -> dict:
                 "reason": f"after the commit {len(left_write)} files still differ and {len(left_delete)} are extra: "
                           + ", ".join((left_write + left_delete)[:5])}
     if ms_access(kind, name, token) != want:
-        return {**result, "state": "failed", "uploaded_bytes": uploaded, "reason": "ModelScope did not take the access"}
+        return {**result, "state": "failed", "uploaded_bytes": uploaded, "reason": "ModelScope did not take the settings"}
     return {**result, "state": "synced", "uploaded_bytes": uploaded}
 
 
