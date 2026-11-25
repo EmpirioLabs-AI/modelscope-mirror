@@ -121,13 +121,13 @@
   },
   "spaces/canora-text-to-speech": {
     "access": "public",
-    "hf_sha": "aa1287db8d678b9cc89ddfa12e838ba54a91f376",
+    "hf_sha": "3a329136c434c18037fac2611448a0516a018533",
     "modelscope": "https://www.modelscope.cn/studios/empiriolabs/canora-text-to-speech",
     "state": "in-sync"
   },
   "spaces/speech-and-text-classifiers": {
     "access": "public",
-    "hf_sha": "88ae709398db9c1481ad643341b4399a7894d20e",
+    "hf_sha": "bd047f6dd28f5e723c9e716c9f4214bf32bbbfc6",
     "modelscope": "https://www.modelscope.cn/studios/empiriolabs/speech-and-text-classifiers",
     "state": "in-sync"
   }
